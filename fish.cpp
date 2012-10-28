@@ -1,10 +1,14 @@
-#include "main.h"
-#include "User.h"
-#include "Nick.h"
-#include "Modules.h"
-#include "Chan.h"
+#include <znc/User.h>
+#include <znc/Nick.h>
+#include <znc/Chan.h>
+
+#include <znc/Modules.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
 
 #include <string.h>
+//#include <pair>
+#include <map>
 using std::pair;
 
 #include <netinet/in.h>
@@ -247,7 +251,7 @@ public:
 		    CString sPriv_Key;
 		    CString sSecretKey;
 
-		    map<CString, pair<time_t, CString> >::iterator it = m_msKeyExchange.find(Nick.GetNick().AsLower());
+		    std::map<CString, pair<time_t, CString> >::iterator it = m_msKeyExchange.find(Nick.GetNick().AsLower());
 		    if (it == m_msKeyExchange.end()) {
 			PutModule("Received unexpected DH1080_FINISH from " + Nick.GetNick() + ".");
 		    } else {
@@ -270,15 +274,15 @@ public:
 		MCString::iterator it = FindNV(sTarget.AsLower());
 
 		if (it != EndNV()) {
-			CChan* pChan = m_pUser->FindChan(sTarget);
-			if ((pChan) && (pChan->KeepBuffer())) {
-				pChan->AddBuffer(":" + m_pUser->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :" + sMessage);
+			CChan* pChan = m_pNetwork->FindChan(sTarget);
+			if ((pChan) && (!pChan->AutoClearChanBuffer())) {
+				pChan->AddBuffer(":" + m_pNetwork->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :" + sMessage);
 			}
 			char * cMsg = encrypts((char *)it->second.c_str(), (char *)sMessage.c_str());
 
 			CString sMsg = "+OK " + CString(cMsg);
 			PutIRC("PRIVMSG " + sTarget + " :" + sMsg);
-			m_pUser->PutUser(":" + m_pUser->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :" + sMessage, NULL, m_pClient);
+			m_pUser->PutUser(":" + m_pNetwork->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :" + sMessage, NULL, m_pClient);
 
 			free(cMsg);
 			return HALTCORE;
@@ -291,15 +295,15 @@ public:
 		MCString::iterator it = FindNV(sTarget.AsLower());
 
 		if (it != EndNV()) {
-			CChan* pChan = m_pUser->FindChan(sTarget);
-			if ((pChan) && (pChan->KeepBuffer())) {
-				pChan->AddBuffer(":" + m_pUser->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :\001ACTION " + sMessage + "\001");
+			CChan* pChan = m_pNetwork->FindChan(sTarget);
+			if ((pChan) && (!pChan->AutoClearChanBuffer())) {
+				pChan->AddBuffer(":" + m_pNetwork->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :\001ACTION " + sMessage + "\001");
 			}
 			char * cMsg = encrypts((char *)it->second.c_str(), (char *)sMessage.c_str());
 
 			CString sMsg = "+OK " + CString(cMsg);
 			PutIRC("PRIVMSG " + sTarget + " :\001ACTION " + sMsg + "\001");
-			m_pUser->PutUser(":" + m_pUser->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :\001ACTION " + sMessage + "\001", NULL, m_pClient);
+			m_pUser->PutUser(":" + m_pNetwork->GetIRCNick().GetNickMask() + " PRIVMSG " + sTarget + " :\001ACTION " + sMessage + "\001", NULL, m_pClient);
 
 			free(cMsg);
 			return HALTCORE;
@@ -312,15 +316,15 @@ public:
 		MCString::iterator it = FindNV(sTarget.AsLower());
 
 		if (it != EndNV()) {
-			CChan* pChan = m_pUser->FindChan(sTarget);
-			if ((pChan) && (pChan->KeepBuffer())) {
-				pChan->AddBuffer(":" + m_pUser->GetIRCNick().GetNickMask() + " NOTICE " + sTarget + " :" + sMessage);
+			CChan* pChan = m_pNetwork->FindChan(sTarget);
+			if ((pChan) && (!pChan->AutoClearChanBuffer())) {
+				pChan->AddBuffer(":" + m_pNetwork->GetIRCNick().GetNickMask() + " NOTICE " + sTarget + " :" + sMessage);
 			}
 			char * cMsg = encrypts((char *)it->second.c_str(), (char *)sMessage.c_str());
 
 			CString sMsg = "+OK " + CString(cMsg);
 			PutIRC("NOTICE " + sTarget + " :" + sMsg);
-			m_pUser->PutUser(":" + m_pUser->GetIRCNick().GetNickMask() + " NOTICE " + sTarget + " :" + sMessage, NULL, m_pClient);
+			m_pUser->PutUser(":" + m_pNetwork->GetIRCNick().GetNickMask() + " NOTICE " + sTarget + " :" + sMessage, NULL, m_pClient);
 
 			free(cMsg);
 			return HALTCORE;
@@ -370,7 +374,7 @@ public:
 
 	virtual EModRet OnRaw(CString& sLine) {
 		if (sLine.WildCmp(":* 332 *") && sLine.Token(1) == "332") {
-			CChan* pChan = m_pUser->FindChan(sLine.Token(3));
+			CChan* pChan = m_pNetwork->FindChan(sLine.Token(3));
 			if (pChan) {
 				CNick Nick(sLine.Token(2));
 				CString sTopic = sLine.Token(4, true);
@@ -487,7 +491,7 @@ public:
 			if (sTarget.empty()) {
 			    PutModule("You did not specify a target for the key exchange.");
 			} else {
-			    map<CString, pair<time_t, CString> >::iterator it = m_msKeyExchange.find(sTarget.AsLower());
+			    std::map<CString, pair<time_t, CString> >::iterator it = m_msKeyExchange.find(sTarget.AsLower());
 			    if (it != m_msKeyExchange.end()) {
 				PutModule("Keyexchange with " + sTarget + " already in progress.");
 			    } else {
@@ -511,7 +515,7 @@ public:
 	}
 
 	void DelStaleKeyExchanges(time_t iTime) {
-		for (map<CString, pair<time_t, CString> >::const_iterator it = m_msKeyExchange.begin(); it != m_msKeyExchange.end(); it++) {
+		for (std::map<CString, pair<time_t, CString> >::const_iterator it = m_msKeyExchange.begin(); it != m_msKeyExchange.end(); it++) {
 		    if (iTime - 5 >= it->second.first) {
 			PutModule("Keyexchange with " + it->first + " did expire before completition.");
 		        m_msKeyExchange.erase(it->first);
@@ -639,7 +643,7 @@ private:
 		return true;
 	}
 
-	map<CString, pair<time_t, CString> >	m_msKeyExchange;
+	std::map<CString, pair<time_t, CString> >	m_msKeyExchange;
 
 };
 

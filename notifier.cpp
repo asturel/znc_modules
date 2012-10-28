@@ -1,5 +1,14 @@
-#include "Chan.h"
-#include "User.h"
+
+#include <znc/Chan.h>
+#include <znc/User.h>
+#include <znc/Modules.h>
+#include <znc/IRCNetwork.h>
+#include <znc/IRCSock.h>
+
+
+#ifndef wget
+#include <curl/curl.h>
+#endif
 
 #define REQUIRESSL	1
 
@@ -30,10 +39,38 @@ void notif_send(CString nick, CString channel, CString message, CString token, C
 	CString sNick = notif_encrypt(nick,pass);
 	CString sChannel = notif_encrypt(channel,pass);
 	CString sMessage = notif_encrypt(message,pass);
-
+	#ifdef wget
         char cmd[message.length() + 1024];
         snprintf(cmd,sizeof(cmd),"wget --no-check-certificate -qO- /dev/null --post-data=\"apiToken=%s&message=%s&channel=%s&nick=%s&version=12\" https://irssinotifier.appspot.com/API/Message",token.c_str(),sMessage.c_str(),sChannel.c_str(),sNick.c_str());
         notif_exec(cmd);
+	#else
+	CURL *curl;
+	CURLcode res;
+	curl_global_init(CURL_GLOBAL_DEFAULT);
+	curl = curl_easy_init();
+	if (curl) {
+		char cmd[message.length() + 1024];
+        	snprintf(cmd,sizeof(cmd),"apiToken=%s&message=%s&channel=%s&nick=%s&version=12",token.c_str(),sMessage.c_str(),sChannel.c_str(),sNick.c_str());
+
+		curl_easy_setopt(curl, CURLOPT_URL, "https://irssinotifier.appspot.com/API/Message");
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, cmd);
+
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+		res = curl_easy_perform(curl);
+		 /* Check for errors */ 
+		if(res != CURLE_OK) //PutModule("curl_easy_perform() failed: " + curl_easy_strerror(res));
+		      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
+			
+ 
+		/* always cleanup */ 
+		 curl_easy_cleanup(curl);
+	}
+ 
+	curl_global_cleanup();		
+	#endif
+
 }
 
 
@@ -56,7 +93,7 @@ public:
 	}
 
 	void FilterIncoming(const CString& sTarget, CNick& Nick, CString& sMessage) {
-		if ((m_pUser->IsIRCAway() || !m_pUser->IsUserAttached()) && !GetNV("token").empty() && !GetNV("password").empty()) {
+		if ((m_pNetwork->IsIRCAway() || !m_pUser->IsUserAttached()) && !GetNV("token").empty() && !GetNV("password").empty()) {
 			notif_send(Nick.GetNick(),sTarget,sMessage,GetNV("token"),GetNV("password"));
 		}
 	}
